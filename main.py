@@ -13,10 +13,10 @@ from ulauncher.api.shared.action.HideWindowAction import HideWindowAction
 logger = logging.getLogger(__name__)
 
 
-class BluetoothQC(Extension):
+class BluetoothCM(Extension):
 
     def __init__(self):
-        super(BluetoothQC, self).__init__()
+        super(BluetoothCM, self).__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
         self.subscribe(ItemEnterEvent, ItemEnterEventListener())
 
@@ -25,43 +25,41 @@ class KeywordQueryEventListener(EventListener):
 
     def on_event(self, event, extension):
         items = []
-        devices = {}
+        unconnected_devices = []
+        connected_devices = []
         logger.info('preferences %s' % json.dumps(extension.preferences))
 
-        # get devices from preferences
-        if extension.preferences.get('device_list') is not None:
-            device_list = extension.preferences['device_list'].split(',')
-            for d in device_list:
-                if len(d) > 18:
-                    devices[d.strip()[0:-18]] = d[-17:]
+        # get  paired bluetooth devices
+        ret = os.popen("bash -c 'bluetoothctl paired-devices'").read()
+        for line in ret.splitlines():
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            device_name = ' '.join(parts[2:])
+            device_address = parts[1]
+            connected = False
+            # check if device is connected
+            info = os.popen(f"bash -c 'bluetoothctl info {device_address}'").read()
+            if 'Connected: yes' in info:
+                connected = True
 
-            # giv user feedback if no devices has been specified
-            if len(devices) == 0:
-                items.append(ExtensionResultItem(icon='images/disconnect.png',
-                                                 name="No devices specified",
-                                                 description="Add them in settings->extentions->BT_manager->device list",
-                                                 on_enter=ExtensionCustomAction("none", keep_app_open=True)))
-                return RenderResultListAction(items)
-
-        # connect options
-        for i in range(len(devices)):
-            key = list(devices.keys())[i]
-            data = 'connect ' + devices[key]
-            items.append(ExtensionResultItem(icon='images/connect.png',
-                                             name="Connect to %s" % key,
-                                             on_enter=ExtensionCustomAction(data, keep_app_open=True)))
-
-        # disconnect options
-        for i in range(len(devices)):
-            key = list(devices.keys())[i]
-            data = 'disconnect ' + devices[key]
-            items.append(ExtensionResultItem(icon='images/disconnect.png',
-                                             name="Disconnect from %s" % key,
-                                             on_enter=ExtensionCustomAction(data, keep_app_open=True)))
+           
+            if connected:
+                connected_devices.append(ExtensionResultItem(
+                    icon='images/disconnect.png',
+                    name=device_name,
+                    description=device_address,
+                    on_enter=ExtensionCustomAction('disconnect ' + device_address, keep_app_open=True)))
+            else:
+                unconnected_devices.append(ExtensionResultItem(
+                    icon='images/connect.png',
+                    name=device_name,
+                    description=device_address,
+                    on_enter=ExtensionCustomAction('connect ' + device_address, keep_app_open=True)))
+        items.extend(unconnected_devices)
+        items.extend(connected_devices)
 
         return RenderResultListAction(items)
-
-
 class ItemEnterEventListener(EventListener):
 
     def on_event(self, event, extension):
@@ -84,4 +82,4 @@ class ItemEnterEventListener(EventListener):
 
 
 if __name__ == '__main__':
-    BluetoothQC().run()
+    BluetoothCM().run()
